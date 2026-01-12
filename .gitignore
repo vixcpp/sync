@@ -39,3 +39,14 @@
 
 # debug information files
 *.dwo
+
+.vscode/
+build/
+vix.log
+cmd.md
+build/
+build-ninja/
+.vix-test/
+.vix_test_inflight/
+.vix_test/
+.vix_test_perm/
