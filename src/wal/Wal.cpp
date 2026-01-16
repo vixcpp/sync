@@ -1,3 +1,16 @@
+/**
+ *
+ *  @file Wal.cpp
+ *  @author Gaspard Kirira
+ *
+ *  Copyright 2025, Gaspard Kirira.  All rights reserved.
+ *  https://github.com/vixcpp/vix
+ *  Use of this source code is governed by a MIT license
+ *  that can be found in the License file.
+ *
+ *  Vix.cpp
+ *
+ */
 #include <vix/sync/wal/Wal.hpp>
 #include <vix/sync/wal/WalWriter.hpp>
 #include <vix/sync/wal/WalReader.hpp>
@@ -5,30 +18,31 @@
 namespace vix::sync::wal
 {
 
-    Wal::Wal(Config cfg) : cfg_(std::move(cfg)) {}
+  Wal::Wal(Config cfg) : cfg_(std::move(cfg)) {}
 
-    std::int64_t Wal::append(const WalRecord &rec)
+  std::int64_t Wal::append(const WalRecord &rec)
+  {
+    WalWriter w({cfg_.file_path, cfg_.fsync_on_write});
+    return w.append(rec);
+  }
+
+  std::int64_t Wal::replay(
+      std::int64_t from_offset,
+      const std::function<void(const WalRecord &)> &on_record)
+  {
+    WalReader r(cfg_.file_path);
+    r.seek(from_offset);
+
+    std::int64_t last = -1;
+    while (true)
     {
-        WalWriter w({cfg_.file_path, cfg_.fsync_on_write});
-        return w.append(rec);
+      auto rec = r.next();
+      if (!rec)
+        break;
+      on_record(*rec);
+      last = r.current_offset();
     }
-
-    std::int64_t Wal::replay(std::int64_t from_offset,
-                             const std::function<void(const WalRecord &)> &on_record)
-    {
-        WalReader r(cfg_.file_path);
-        r.seek(from_offset);
-
-        std::int64_t last = -1;
-        while (true)
-        {
-            auto rec = r.next();
-            if (!rec)
-                break;
-            on_record(*rec);
-            last = r.current_offset();
-        }
-        return last;
-    }
+    return last;
+  }
 
 } // namespace vix::sync::wal

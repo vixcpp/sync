@@ -26,15 +26,15 @@ project(vix_sync VERSION 0.1.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 
-# ------------------------ Global settings ----------------------------
+# Global settings
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# ------------------------ Sources discovery --------------------------
+# Sources discovery
 file(GLOB_RECURSE SYNC_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
-# ------------------------ Utils dependency (robust) ------------------
+# Utils dependency
 option(VIX_SYNC_FETCH_UTILS "Auto-fetch vix::utils if missing" ON)
 
 if (NOT TARGET vix::utils)
@@ -46,7 +46,7 @@ if (NOT TARGET vix::utils)
     message(STATUS "[sync] Fetching vix::utils via FetchContent")
     FetchContent_Declare(vix_utils
       GIT_REPOSITORY https://github.com/vixcpp/utils.git
-      GIT_TAG       dev 
+      GIT_TAG       dev
     )
     FetchContent_MakeAvailable(vix_utils)
   else()
@@ -59,7 +59,7 @@ if (NOT TARGET ${VIX_UTILS_TARGET} AND TARGET vix::utils)
   set(VIX_UTILS_TARGET vix::utils)
 endif()
 
-# ------------------------- Net dependency (robust) -------------------
+# Net dependency
 option(VIX_SYNC_FETCH_NET "Auto-fetch vix::net if missing" ON)
 
 if (NOT TARGET vix::net)
@@ -84,7 +84,7 @@ if (NOT TARGET ${VIX_NET_TARGET} AND TARGET vix::net)
   set(VIX_NET_TARGET vix::net)
 endif()
 
-# ============================== STATIC ===============================
+# STATIC
 if (SYNC_SOURCES)
   message(STATUS "[sync] Building STATIC library with detected sources.")
 
@@ -132,7 +132,7 @@ if (SYNC_SOURCES)
   install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
           FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h")
 
-# ============================ HEADER-ONLY ============================
+# HEADER-ONLY
 else()
   message(STATUS "[sync] Building HEADER-ONLY library (no sources).")
 
@@ -162,7 +162,7 @@ else()
           FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h")
 endif()
 
-# ----------------------------- Tests ---------------------------------
+# Tests
 option(VIX_SYNC_BUILD_TESTS "Build sync module tests" OFF)
 
 if (VIX_SYNC_BUILD_TESTS)
@@ -171,7 +171,7 @@ if (VIX_SYNC_BUILD_TESTS)
   add_subdirectory(tests)
 endif()
 
-# ----------------------------- Summary -------------------------------
+# Summary
 message(STATUS "------------------------------------------------------")
 message(STATUS "vix::sync configured (${PROJECT_VERSION})")
 if (SYNC_SOURCES)

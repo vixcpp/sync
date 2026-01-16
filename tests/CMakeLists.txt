@@ -7,9 +7,7 @@ if (BUILD_TESTING)
   enable_testing()
 endif()
 
-# ----------------------------
 # Common test settings
-# ----------------------------
 set(VIX_SYNC_TEST_TARGET vix::sync)
 if (NOT TARGET ${VIX_SYNC_TEST_TARGET} AND TARGET vix_sync)
   set(VIX_SYNC_TEST_TARGET vix_sync)
@@ -19,9 +17,7 @@ if (NOT TARGET ${VIX_SYNC_TEST_TARGET})
   message(FATAL_ERROR "[sync/tests] Missing sync target (expected vix::sync or vix_sync).")
 endif()
 
-# ----------------------------
 # Sync / Outbox smoke test
-# ----------------------------
 add_executable(core_sync_smoke_test
   sync_engine_outbox_smoke_test.cpp
 )
@@ -39,9 +35,7 @@ if (BUILD_TESTING)
   )
 endif()
 
-# ----------------------------
 # Sync / Outbox permanent failure test (F1)
-# ----------------------------
 add_executable(core_sync_permanent_fail_test
   sync_engine_outbox_permanent_fail_test.cpp
 )
@@ -59,9 +53,7 @@ if (BUILD_TESTING)
   )
 endif()
 
-# ----------------------------
 # Sync / Outbox in-flight timeout test
-# ----------------------------
 add_executable(core_sync_inflight_timeout_test
   sync_engine_inflight_timeout_test.cpp
 )
