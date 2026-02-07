@@ -16,7 +16,7 @@
 #include <fstream>
 #include <stdexcept>
 
-#include <nlohmann/json.hpp>
+#include <vix/json/json.hpp>
 
 namespace vix::sync::outbox
 {
