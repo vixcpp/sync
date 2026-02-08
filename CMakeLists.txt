@@ -92,6 +92,37 @@ if (NOT TARGET ${VIX_NET_TARGET} AND TARGET vix::net)
   set(VIX_NET_TARGET vix::net)
 endif()
 
+# JSON dependency (needed by FileOutboxStore.cpp via <vix/json/...>)
+option(VIX_SYNC_FETCH_JSON "Auto-fetch vix::json if missing" ON)
+
+if (NOT TARGET vix::json AND NOT TARGET vix_json)
+  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../json/CMakeLists.txt")
+    message(STATUS "[sync] Adding json from umbrella: ../json")
+    add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../json" "json")
+  elseif (VIX_SYNC_FETCH_JSON)
+    include(FetchContent)
+    message(STATUS "[sync] Fetching vix::json via FetchContent")
+    FetchContent_Declare(vix_json_mod
+      GIT_REPOSITORY https://github.com/vixcpp/json.git
+      GIT_TAG        dev
+    )
+    FetchContent_MakeAvailable(vix_json_mod)
+  else()
+    message(FATAL_ERROR "vix::json not found. Enable VIX_SYNC_FETCH_JSON=ON or provide the target before sync.")
+  endif()
+endif()
+
+set(VIX_JSON_TARGET "")
+if (TARGET vix::json)
+  set(VIX_JSON_TARGET vix::json)
+elseif (TARGET vix_json)
+  set(VIX_JSON_TARGET vix_json)
+endif()
+
+if (VIX_JSON_TARGET STREQUAL "")
+  message(FATAL_ERROR "[sync] JSON backend not found (expected vix::json or vix_json)")
+endif()
+
 # STATIC
 if (SYNC_SOURCES)
   message(STATUS "[sync] Building STATIC library with detected sources.")
@@ -122,6 +153,7 @@ if (SYNC_SOURCES)
     PUBLIC
       ${VIX_UTILS_TARGET}
       ${VIX_NET_TARGET}
+      ${VIX_JSON_TARGET}
   )
 
   set_target_properties(vix_sync PROPERTIES
@@ -157,7 +189,9 @@ else()
   target_link_libraries(vix_sync INTERFACE
     ${VIX_UTILS_TARGET}
     ${VIX_NET_TARGET}
+    ${VIX_JSON_TARGET}
   )
+
 
   if (VIX_ENABLE_SANITIZERS AND TARGET vix_sanitizers)
     target_link_libraries(vix_sync INTERFACE vix_sanitizers)
