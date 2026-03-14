@@ -1,0 +1,28 @@
+{
+  "name": "sync",
+  "namespace": "vix",
+  "version": "0.1.0",
+  "type": "header-and-source",
+  "include": "include",
+  "src": "src",
+  "license": "MIT",
+  "description": "Reliable synchronization engine for Vix.cpp: WAL-based operations, outbox queue, retry policies, and sync engine utilities.",
+  "keywords": [
+    "cpp",
+    "vix",
+    "sync",
+    "synchronization",
+    "wal",
+    "outbox",
+    "retry",
+    "operations",
+    "engine"
+  ],
+  "repository": "https://github.com/vixcpp/sync",
+  "authors": [
+    {
+      "name": "Gaspard Kirira",
+      "github": "Gaspardkirira"
+    }
+  ]
+}
