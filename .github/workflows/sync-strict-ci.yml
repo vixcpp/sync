@@ -463,6 +463,26 @@ jobs:
           sudo apt-get install -y $DEPS
           test -f /usr/include/asio.hpp || (echo "::error::System Asio header not found after install"; exit 1)
 
+      - name: Fetch sibling dependencies
+        run: |
+          rm -rf ../utils ../net ../json
+
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/utils.git ../utils
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/net.git ../net
+          git clone --depth 1 --branch "${VIX_GIT_BRANCH}" https://github.com/vixcpp/json.git ../json
+
+      - name: Verify required sibling dependencies
+        run: |
+          test -f ../utils/CMakeLists.txt || (echo "::error::../utils/CMakeLists.txt is missing"; exit 1)
+          test -f ../net/CMakeLists.txt || (echo "::error::../net/CMakeLists.txt is missing"; exit 1)
+          test -f ../json/CMakeLists.txt || (echo "::error::../json/CMakeLists.txt is missing"; exit 1)
+          test -f ../json/include/vix/json/Simple.hpp || (echo "::error::../json/include/vix/json/Simple.hpp is missing"; exit 1)
+
+      - name: Export dependency include paths
+        run: |
+          echo "CPATH=$GITHUB_WORKSPACE/../json/include:$GITHUB_WORKSPACE/../utils/include:$GITHUB_WORKSPACE/../net/include${CPATH:+:$CPATH}" >> "$GITHUB_ENV"
+          echo "CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/../json/include:$GITHUB_WORKSPACE/../utils/include:$GITHUB_WORKSPACE/../net/include${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}" >> "$GITHUB_ENV"
+
       - name: Configure release mode with sibling deps
         run: |
           cmake -G Ninja -S . -B build-release-local \
