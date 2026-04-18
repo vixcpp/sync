@@ -129,17 +129,23 @@ if (SYNC_SOURCES)
 
   add_library(vix_sync STATIC ${SYNC_SOURCES})
 
-  if (TARGET vix_warnings)
-    message(STATUS "[sync] vix_warnings detected (from umbrella)")
-    target_link_libraries(vix_sync PRIVATE vix_warnings)
+if (NOT MSVC)
+  target_compile_options(vix_sync PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+  )
+endif()
 
-    if (VIX_ENABLE_SANITIZERS AND TARGET vix_sanitizers)
-      target_link_libraries(vix_sync PRIVATE vix_sanitizers)
-    endif()
-
-  else()
-    message(STATUS "[sync] vix_warnings not found (building sync standalone)")
-  endif()
+if (VIX_ENABLE_SANITIZERS AND NOT MSVC)
+  target_compile_options(vix_sync PRIVATE
+    -fno-omit-frame-pointer
+    -fsanitize=address,undefined
+  )
+  target_link_options(vix_sync PRIVATE
+    -fsanitize=address,undefined
+  )
+endif()
 
   add_library(vix::sync ALIAS vix_sync)
   target_compile_features(vix_sync PUBLIC cxx_std_20)
