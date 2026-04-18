@@ -131,9 +131,10 @@ if (SYNC_SOURCES)
 
   if (TARGET vix_warnings)
     message(STATUS "[sync] vix_warnings detected (from umbrella)")
-    target_link_libraries(vix_sync PUBLIC vix_warnings)
+    target_link_libraries(vix_sync PRIVATE vix_warnings)
+
     if (VIX_ENABLE_SANITIZERS AND TARGET vix_sanitizers)
-      target_link_libraries(vix_sync PUBLIC vix_sanitizers)
+      target_link_libraries(vix_sync PRIVATE vix_sanitizers)
     endif()
 
   else()
@@ -191,11 +192,6 @@ else()
     ${VIX_NET_TARGET}
     ${VIX_JSON_TARGET}
   )
-
-
-  if (VIX_ENABLE_SANITIZERS AND TARGET vix_sanitizers)
-    target_link_libraries(vix_sync INTERFACE vix_sanitizers)
-  endif()
 
   install(TARGETS vix_sync
     EXPORT VixTargets
