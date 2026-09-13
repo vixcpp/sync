@@ -186,6 +186,11 @@ else()
 
   add_library(vix_sync INTERFACE)
   add_library(vix::sync ALIAS vix_sync)
+
+  set_target_properties(vix_sync PROPERTIES
+    EXPORT_NAME sync
+  )
+
   target_compile_features(vix_sync INTERFACE cxx_std_20)
 
   target_include_directories(vix_sync INTERFACE
