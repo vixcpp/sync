@@ -19,7 +19,6 @@
 #   - vix::sync  : Namespaced alias for consumers
 #
 # Public Dependencies:
-#   - vix::utils
 #   - vix::net
 #
 # Options:
@@ -41,31 +40,6 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Sources discovery
 file(GLOB_RECURSE SYNC_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
-
-# Utils dependency
-option(VIX_SYNC_FETCH_UTILS "Auto-fetch vix::utils if missing" ON)
-
-if (NOT TARGET vix::utils)
-  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../utils/CMakeLists.txt")
-    message(STATUS "[sync] Adding utils from umbrella: ../utils")
-    add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../utils" "utils")
-  elseif (VIX_SYNC_FETCH_UTILS)
-    include(FetchContent)
-    message(STATUS "[sync] Fetching vix::utils via FetchContent")
-    FetchContent_Declare(vix_utils
-      GIT_REPOSITORY https://github.com/vixcpp/utils.git
-      GIT_TAG       dev
-    )
-    FetchContent_MakeAvailable(vix_utils)
-  else()
-    message(FATAL_ERROR "vix::utils not found. Enable VIX_SYNC_FETCH_UTILS=ON or provide the target before sync.")
-  endif()
-endif()
-
-set(VIX_UTILS_TARGET vix::utils)
-if (NOT TARGET ${VIX_UTILS_TARGET} AND TARGET vix::utils)
-  set(VIX_UTILS_TARGET vix::utils)
-endif()
 
 # Net dependency
 option(VIX_SYNC_FETCH_NET "Auto-fetch vix::net if missing" ON)
@@ -158,7 +132,6 @@ endif()
 
   target_link_libraries(vix_sync
     PUBLIC
-      ${VIX_UTILS_TARGET}
       ${VIX_NET_TARGET}
       ${VIX_JSON_TARGET}
   )
@@ -199,7 +172,6 @@ else()
   )
 
   target_link_libraries(vix_sync INTERFACE
-    ${VIX_UTILS_TARGET}
     ${VIX_NET_TARGET}
     ${VIX_JSON_TARGET}
   )
@@ -230,7 +202,6 @@ else()
   message(STATUS "Mode: HEADER-ONLY / no sources")
 endif()
 message(STATUS "Net target:      ${VIX_NET_TARGET}")
-message(STATUS "Utils target:    ${VIX_UTILS_TARGET}")
 message(STATUS "Include dir: ${CMAKE_CURRENT_SOURCE_DIR}/include (for <vix/...>)")
 message(STATUS "Sanitizers (inherited): ${VIX_ENABLE_SANITIZERS}")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
