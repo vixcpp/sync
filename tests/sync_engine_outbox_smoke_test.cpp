@@ -12,9 +12,11 @@
  *
  */
 #include <cassert>
-#include <chrono>
+#include <filesystem>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
+#include <utility>
 
 #include <vix/net/NetworkProbe.hpp>
 #include <vix/sync/outbox/Outbox.hpp>
@@ -23,64 +25,224 @@
 
 #include "fake_http_transport.hpp"
 
-static std::int64_t now_ms()
+static void reset_test_dir(const std::filesystem::path &dir)
 {
-  using namespace std::chrono;
-  return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+  std::error_code ec;
+  std::filesystem::remove_all(dir, ec);
+  std::filesystem::create_directories(dir, ec);
+}
+
+static std::shared_ptr<vix::sync::outbox::Outbox> make_outbox(
+    const std::filesystem::path &dir,
+    const char *owner)
+{
+  using namespace vix::sync::outbox;
+
+  reset_test_dir(dir);
+  auto store = std::make_shared<FileOutboxStore>(FileOutboxStore::Config{
+      .file_path = dir / "outbox.json",
+      .pretty_json = true,
+      .fsync_on_write = false});
+
+  return std::make_shared<Outbox>(
+      Outbox::Config{.owner = owner},
+      std::move(store));
+}
+
+static vix::sync::Operation ready_operation()
+{
+  vix::sync::Operation op;
+  op.kind = "http.post";
+  op.target = "/api/messages";
+  op.payload = R"({"text":"hello offline"})";
+  return op;
+}
+
+static void test_online_send_and_completion()
+{
+  using namespace vix::sync;
+  using namespace vix::sync::engine;
+
+  auto outbox = make_outbox("./.vix_test", "test-engine");
+  auto probe = std::make_shared<vix::net::NetworkProbe>(
+      vix::net::NetworkProbe::Config{}, [] { return true; });
+  auto transport = std::make_shared<FakeHttpTransport>();
+  transport->setDefault({.ok = true});
+
+  SyncEngine engine(
+      SyncEngine::Config{.worker_count = 1, .batch_limit = 10},
+      outbox, probe, transport);
+
+  constexpr std::int64_t t0 = 1'000;
+  const auto id = outbox->enqueue(ready_operation(), t0);
+  assert(engine.tick(t0) >= 1);
+
+  const auto saved = outbox->store()->get(id);
+  assert(saved.has_value());
+  assert(saved->status == OperationStatus::Done);
+}
+
+static void test_offline_probe_blocks_ready_send()
+{
+  using namespace vix::sync;
+  using namespace vix::sync::engine;
+
+  constexpr std::int64_t t0 = 10'000;
+  auto outbox = make_outbox("./.vix_test_offline_gate", "offline-gate");
+  int probe_calls = 0;
+  auto probe = std::make_shared<vix::net::NetworkProbe>(
+      vix::net::NetworkProbe::Config{},
+      [&probe_calls]
+      {
+        ++probe_calls;
+        return false;
+      });
+  auto transport = std::make_shared<FakeHttpTransport>();
+  const auto id = outbox->enqueue(ready_operation(), t0);
+
+  SyncEngine engine(SyncEngine::Config{}, outbox, probe, transport);
+
+  assert(engine.tick(t0) == 0);
+  assert(probe_calls == 1);
+  assert(transport->callCount() == 0);
+
+  const auto saved = outbox->store()->get(id);
+  assert(saved.has_value());
+  assert(saved->status == OperationStatus::Pending);
+}
+
+static void test_workers_share_rate_limited_probe_state()
+{
+  using namespace vix::sync;
+  using namespace vix::sync::engine;
+
+  constexpr std::int64_t t0 = 20'000;
+  auto outbox = make_outbox("./.vix_test_shared_gate", "shared-gate");
+  int probe_calls = 0;
+  vix::net::NetworkProbe::Config probe_config;
+  probe_config.min_interval_ms = 100;
+  auto probe = std::make_shared<vix::net::NetworkProbe>(
+      probe_config,
+      [&probe_calls]
+      {
+        ++probe_calls;
+        return false;
+      });
+  auto transport = std::make_shared<FakeHttpTransport>();
+  outbox->enqueue(ready_operation(), t0);
+
+  SyncEngine engine(
+      SyncEngine::Config{.worker_count = 2},
+      outbox, probe, transport);
+
+  assert(engine.tick(t0) == 0);
+  assert(probe_calls == 1);
+  assert(transport->callCount() == 0);
+}
+
+static void test_offline_to_online_recovery_after_rate_limit()
+{
+  using namespace vix::sync;
+  using namespace vix::sync::engine;
+
+  constexpr std::int64_t t0 = 30'000;
+  auto outbox = make_outbox("./.vix_test_gate_recovery", "gate-recovery");
+  int probe_calls = 0;
+  vix::net::NetworkProbe::Config probe_config;
+  probe_config.min_interval_ms = 100;
+  auto probe = std::make_shared<vix::net::NetworkProbe>(
+      probe_config,
+      [&probe_calls]
+      {
+        ++probe_calls;
+        return probe_calls >= 2;
+      });
+  auto transport = std::make_shared<FakeHttpTransport>();
+  const auto id = outbox->enqueue(ready_operation(), t0);
+
+  SyncEngine engine(SyncEngine::Config{}, outbox, probe, transport);
+
+  assert(engine.tick(t0) == 0);
+  assert(probe_calls == 1);
+  assert(transport->callCount() == 0);
+
+  assert(engine.tick(t0 + 50) == 0);
+  assert(probe_calls == 1);
+  assert(transport->callCount() == 0);
+
+  assert(engine.tick(t0 + 100) >= 1);
+  assert(probe_calls == 2);
+  assert(transport->callCount() == 1);
+
+  const auto saved = outbox->store()->get(id);
+  assert(saved.has_value());
+  assert(saved->status == OperationStatus::Done);
+}
+
+static void test_probe_exception_propagates_from_manual_tick()
+{
+  using namespace vix::sync;
+  using namespace vix::sync::engine;
+
+  auto outbox = make_outbox("./.vix_test_gate_exception", "gate-exception");
+  auto probe = std::make_shared<vix::net::NetworkProbe>(
+      []
+      {
+        throw std::runtime_error("probe failure");
+        return false;
+      });
+  auto transport = std::make_shared<FakeHttpTransport>();
+  outbox->enqueue(ready_operation(), 40'000);
+
+  SyncEngine engine(SyncEngine::Config{}, outbox, probe, transport);
+
+  bool propagated = false;
+  try
+  {
+    (void)engine.tick(40'000);
+  }
+  catch (const std::runtime_error &)
+  {
+    propagated = true;
+  }
+
+  assert(propagated);
+  assert(transport->callCount() == 0);
+}
+
+static void test_null_probe_allows_send()
+{
+  using namespace vix::sync;
+  using namespace vix::sync::engine;
+
+  constexpr std::int64_t t0 = 50'000;
+  auto outbox = make_outbox("./.vix_test_null_gate", "null-gate");
+  auto transport = std::make_shared<FakeHttpTransport>();
+  const auto id = outbox->enqueue(ready_operation(), t0);
+
+  SyncEngine engine(
+      SyncEngine::Config{},
+      outbox,
+      std::shared_ptr<vix::net::NetworkProbe>{},
+      transport);
+
+  assert(engine.tick(t0) >= 1);
+  assert(transport->callCount() == 1);
+
+  const auto saved = outbox->store()->get(id);
+  assert(saved.has_value());
+  assert(saved->status == OperationStatus::Done);
 }
 
 int main()
 {
-  using namespace vix::sync;
-  using namespace vix::sync::outbox;
-  using namespace vix::sync::engine;
+  test_online_send_and_completion();
+  test_offline_probe_blocks_ready_send();
+  test_workers_share_rate_limited_probe_state();
+  test_offline_to_online_recovery_after_rate_limit();
+  test_probe_exception_propagates_from_manual_tick();
+  test_null_probe_allows_send();
 
-  // 1) Outbox store
-  auto store = std::make_shared<FileOutboxStore>(FileOutboxStore::Config{
-      .file_path = "./.vix_test/outbox.json",
-      .pretty_json = true,
-      .fsync_on_write = false});
-
-  auto outbox = std::make_shared<Outbox>(
-      Outbox::Config{
-          .owner = "test-engine",
-      },
-      store);
-
-  // 2) Network probe: always online for this test
-  auto probe = std::make_shared<vix::net::NetworkProbe>(
-      vix::net::NetworkProbe::Config{},
-      []
-      { return true; });
-
-  // 3) Fake transport: success
-  auto transport = std::make_shared<FakeHttpTransport>();
-  transport->setDefault({.ok = true});
-
-  // 4) Engine
-  SyncEngine engine(
-      SyncEngine::Config{
-          .worker_count = 1,
-          .batch_limit = 10},
-      outbox, probe, transport);
-
-  // 5) Enqueue operation
-  Operation op;
-  op.kind = "http.post";
-  op.target = "/api/messages";
-  op.payload = R"({"text":"hello offline"})";
-
-  const auto t0 = now_ms();
-  const auto id = outbox->enqueue(op, t0);
-
-  // 6) Tick engine => should send and complete
-  const auto processed = engine.tick(now_ms());
-  assert(processed >= 1);
-
-  auto saved = store->get(id);
-  assert(saved.has_value());
-  assert(saved->status == OperationStatus::Done);
-
-  std::cout << "OK: operation sent and marked Done\n";
+  std::cout << "OK: sync send-gating regression tests passed\n";
   return 0;
 }
