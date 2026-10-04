@@ -18,9 +18,6 @@
 #   - vix_sync   : The actual library target (STATIC or INTERFACE)
 #   - vix::sync  : Namespaced alias for consumers
 #
-# Public Dependencies:
-#   - vix::net
-#
 # Options:
 #   - VIX_ENABLE_SANITIZERS : Inherit sanitizers from the parent project
 #
@@ -40,31 +37,6 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Sources discovery
 file(GLOB_RECURSE SYNC_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
-
-# Net dependency
-option(VIX_SYNC_FETCH_NET "Auto-fetch vix::net if missing" ON)
-
-if (NOT TARGET vix::net)
-  if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/../net/CMakeLists.txt")
-    message(STATUS "[sync] Adding net from umbrella: ../net")
-    add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../net" "net")
-  elseif (VIX_SYNC_FETCH_NET)
-    include(FetchContent)
-    message(STATUS "[sync] Fetching vix::net via FetchContent")
-    FetchContent_Declare(vix_net
-      GIT_REPOSITORY https://github.com/vixcpp/net.git
-      GIT_TAG        dev
-    )
-    FetchContent_MakeAvailable(vix_net)
-  else()
-    message(FATAL_ERROR "vix::net not found. Enable VIX_SYNC_FETCH_NET=ON or provide the target before sync.")
-  endif()
-endif()
-
-set(VIX_NET_TARGET vix::net)
-if (NOT TARGET ${VIX_NET_TARGET} AND TARGET vix::net)
-  set(VIX_NET_TARGET vix::net)
-endif()
 
 # JSON dependency (needed by FileOutboxStore.cpp via <vix/json/...>)
 option(VIX_SYNC_FETCH_JSON "Auto-fetch vix::json if missing" ON)
@@ -132,7 +104,6 @@ endif()
 
   target_link_libraries(vix_sync
     PUBLIC
-      ${VIX_NET_TARGET}
       ${VIX_JSON_TARGET}
   )
 
@@ -172,7 +143,6 @@ else()
   )
 
   target_link_libraries(vix_sync INTERFACE
-    ${VIX_NET_TARGET}
     ${VIX_JSON_TARGET}
   )
 
@@ -201,7 +171,6 @@ if (SYNC_SOURCES)
 else()
   message(STATUS "Mode: HEADER-ONLY / no sources")
 endif()
-message(STATUS "Net target:      ${VIX_NET_TARGET}")
 message(STATUS "Include dir: ${CMAKE_CURRENT_SOURCE_DIR}/include (for <vix/...>)")
 message(STATUS "Sanitizers (inherited): ${VIX_ENABLE_SANITIZERS}")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")

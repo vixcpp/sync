@@ -18,7 +18,6 @@
 #include <stdexcept>
 #include <utility>
 
-#include <vix/net/NetworkProbe.hpp>
 #include <vix/sync/outbox/Outbox.hpp>
 #include <vix/sync/outbox/FileOutboxStore.hpp>
 #include <vix/sync/engine/SyncEngine.hpp>
@@ -64,14 +63,13 @@ static void test_online_send_and_completion()
   using namespace vix::sync::engine;
 
   auto outbox = make_outbox("./.vix_test", "test-engine");
-  auto probe = std::make_shared<vix::net::NetworkProbe>(
-      vix::net::NetworkProbe::Config{}, [] { return true; });
   auto transport = std::make_shared<FakeHttpTransport>();
   transport->setDefault({.ok = true});
+  SyncEngine::Config config{.worker_count = 1, .batch_limit = 10};
+  config.send_permission = [] { return true; };
 
   SyncEngine engine(
-      SyncEngine::Config{.worker_count = 1, .batch_limit = 10},
-      outbox, probe, transport);
+      std::move(config), outbox, transport);
 
   constexpr std::int64_t t0 = 1'000;
   const auto id = outbox->enqueue(ready_operation(), t0);
@@ -82,7 +80,7 @@ static void test_online_send_and_completion()
   assert(saved->status == OperationStatus::Done);
 }
 
-static void test_offline_probe_blocks_ready_send()
+static void test_offline_permission_blocks_ready_send()
 {
   using namespace vix::sync;
   using namespace vix::sync::engine;
@@ -90,17 +88,16 @@ static void test_offline_probe_blocks_ready_send()
   constexpr std::int64_t t0 = 10'000;
   auto outbox = make_outbox("./.vix_test_offline_gate", "offline-gate");
   int probe_calls = 0;
-  auto probe = std::make_shared<vix::net::NetworkProbe>(
-      vix::net::NetworkProbe::Config{},
-      [&probe_calls]
-      {
-        ++probe_calls;
-        return false;
-      });
   auto transport = std::make_shared<FakeHttpTransport>();
   const auto id = outbox->enqueue(ready_operation(), t0);
+  SyncEngine::Config config;
+  config.send_permission = [&probe_calls]
+  {
+    ++probe_calls;
+    return false;
+  };
 
-  SyncEngine engine(SyncEngine::Config{}, outbox, probe, transport);
+  SyncEngine engine(std::move(config), outbox, transport);
 
   assert(engine.tick(t0) == 0);
   assert(probe_calls == 1);
@@ -111,7 +108,7 @@ static void test_offline_probe_blocks_ready_send()
   assert(saved->status == OperationStatus::Pending);
 }
 
-static void test_workers_share_rate_limited_probe_state()
+static void test_workers_share_rate_limited_permission_state()
 {
   using namespace vix::sync;
   using namespace vix::sync::engine;
@@ -119,21 +116,18 @@ static void test_workers_share_rate_limited_probe_state()
   constexpr std::int64_t t0 = 20'000;
   auto outbox = make_outbox("./.vix_test_shared_gate", "shared-gate");
   int probe_calls = 0;
-  vix::net::NetworkProbe::Config probe_config;
-  probe_config.min_interval_ms = 100;
-  auto probe = std::make_shared<vix::net::NetworkProbe>(
-      probe_config,
-      [&probe_calls]
-      {
-        ++probe_calls;
-        return false;
-      });
   auto transport = std::make_shared<FakeHttpTransport>();
   outbox->enqueue(ready_operation(), t0);
+  SyncEngine::Config config{.worker_count = 2};
+  config.send_permission_min_interval_ms = 100;
+  config.send_permission = [&probe_calls]
+  {
+    ++probe_calls;
+    return false;
+  };
 
   SyncEngine engine(
-      SyncEngine::Config{.worker_count = 2},
-      outbox, probe, transport);
+      std::move(config), outbox, transport);
 
   assert(engine.tick(t0) == 0);
   assert(probe_calls == 1);
@@ -148,19 +142,17 @@ static void test_offline_to_online_recovery_after_rate_limit()
   constexpr std::int64_t t0 = 30'000;
   auto outbox = make_outbox("./.vix_test_gate_recovery", "gate-recovery");
   int probe_calls = 0;
-  vix::net::NetworkProbe::Config probe_config;
-  probe_config.min_interval_ms = 100;
-  auto probe = std::make_shared<vix::net::NetworkProbe>(
-      probe_config,
-      [&probe_calls]
-      {
-        ++probe_calls;
-        return probe_calls >= 2;
-      });
   auto transport = std::make_shared<FakeHttpTransport>();
   const auto id = outbox->enqueue(ready_operation(), t0);
+  SyncEngine::Config config;
+  config.send_permission_min_interval_ms = 100;
+  config.send_permission = [&probe_calls]
+  {
+    ++probe_calls;
+    return probe_calls >= 2;
+  };
 
-  SyncEngine engine(SyncEngine::Config{}, outbox, probe, transport);
+  SyncEngine engine(std::move(config), outbox, transport);
 
   assert(engine.tick(t0) == 0);
   assert(probe_calls == 1);
@@ -185,16 +177,16 @@ static void test_probe_exception_propagates_from_manual_tick()
   using namespace vix::sync::engine;
 
   auto outbox = make_outbox("./.vix_test_gate_exception", "gate-exception");
-  auto probe = std::make_shared<vix::net::NetworkProbe>(
-      []
-      {
-        throw std::runtime_error("probe failure");
-        return false;
-      });
   auto transport = std::make_shared<FakeHttpTransport>();
   outbox->enqueue(ready_operation(), 40'000);
+  SyncEngine::Config config;
+  config.send_permission = []
+  {
+    throw std::runtime_error("permission failure");
+    return false;
+  };
 
-  SyncEngine engine(SyncEngine::Config{}, outbox, probe, transport);
+  SyncEngine engine(std::move(config), outbox, transport);
 
   bool propagated = false;
   try
@@ -223,7 +215,6 @@ static void test_null_probe_allows_send()
   SyncEngine engine(
       SyncEngine::Config{},
       outbox,
-      std::shared_ptr<vix::net::NetworkProbe>{},
       transport);
 
   assert(engine.tick(t0) >= 1);
@@ -237,8 +228,8 @@ static void test_null_probe_allows_send()
 int main()
 {
   test_online_send_and_completion();
-  test_offline_probe_blocks_ready_send();
-  test_workers_share_rate_limited_probe_state();
+  test_offline_permission_blocks_ready_send();
+  test_workers_share_rate_limited_permission_state();
   test_offline_to_online_recovery_after_rate_limit();
   test_probe_exception_propagates_from_manual_tick();
   test_null_probe_allows_send();
