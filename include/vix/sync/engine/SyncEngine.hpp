@@ -18,11 +18,11 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <thread>
 #include <vector>
 
-#include <vix/net/NetworkProbe.hpp>
 #include <vix/sync/engine/SyncWorker.hpp>
 #include <vix/sync/outbox/Outbox.hpp>
 
@@ -34,7 +34,7 @@ namespace vix::sync::engine
    * SyncEngine is responsible for running the main synchronization control loop:
    * - Spawns and owns a set of SyncWorker instances
    * - Periodically ticks workers to pull operations from the Outbox
-   * - Uses NetworkProbe to adapt behavior when offline/online
+   * - Applies configured send permission before delivery attempts
    * - Delegates actual I/O to an ISyncTransport implementation
    *
    * The engine can be driven manually via tick() (single-threaded integration),
@@ -65,9 +65,21 @@ namespace vix::sync::engine
       std::int64_t idle_sleep_ms{250};
 
       /**
-       * @brief Sleep duration when network is considered offline.
+       * @brief Sleep duration when delivery permission is denied.
        */
       std::int64_t offline_sleep_ms{500};
+
+      /**
+       * @brief Optional policy deciding whether remote delivery may proceed.
+       *
+       * When unset, Sync permits delivery. Exceptions propagate from tick().
+       */
+      std::function<bool()> send_permission{};
+
+      /**
+       * @brief Minimum delay between shared permission evaluations.
+       */
+      std::int64_t send_permission_min_interval_ms{1000};
 
       /**
        * @brief Maximum number of operations to pull per batch.
@@ -88,13 +100,11 @@ namespace vix::sync::engine
      *
      * @param cfg Engine configuration.
      * @param outbox Shared Outbox containing pending operations to sync.
-     * @param probe Network probe used to detect offline/online state.
      * @param transport Transport used to send/receive sync payloads.
      */
     SyncEngine(
         Config cfg,
         std::shared_ptr<vix::sync::outbox::Outbox> outbox,
-        std::shared_ptr<vix::net::NetworkProbe> probe,
         std::shared_ptr<ISyncTransport> transport);
 
     /**
@@ -160,9 +170,9 @@ namespace vix::sync::engine
     std::shared_ptr<vix::sync::outbox::Outbox> outbox_;
 
     /**
-     * @brief Network probe used to detect connectivity changes.
+     * @brief Shared, rate-limited delivery permission used by every worker.
      */
-    std::shared_ptr<vix::net::NetworkProbe> probe_;
+    std::function<bool(std::int64_t)> send_permission_;
 
     /**
      * @brief Transport used by workers to communicate with remote peers/edge.

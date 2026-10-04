@@ -21,7 +21,6 @@
 #include <memory>
 #include <string>
 
-#include <vix/net/NetworkProbe.hpp>
 #include <vix/sync/Operation.hpp>
 #include <vix/sync/outbox/Outbox.hpp>
 
@@ -84,7 +83,7 @@ namespace vix::sync::engine
    * @brief Single-worker unit that processes ready operations from the Outbox.
    *
    * SyncWorker:
-   * - Consults NetworkProbe to decide if sending should proceed
+   * - Consults configured send permission before delivery attempts
    * - Pulls a batch of ready operations from the Outbox
    * - Sends operations through ISyncTransport
    * - Applies retry/backoff decisions by updating Outbox state (implementation-defined)
@@ -117,7 +116,7 @@ namespace vix::sync::engine
       std::int64_t idle_sleep_ms{250};
 
       /**
-       * @brief Sleep duration when network is considered offline.
+       * @brief Sleep duration when delivery permission is denied.
        *
        * This is mainly used by higher-level orchestrators (SyncEngine).
        */
@@ -137,13 +136,13 @@ namespace vix::sync::engine
      *
      * @param cfg Worker configuration.
      * @param outbox Shared outbox used to fetch and update operations.
-     * @param probe Network probe used to detect offline/online state.
+     * @param send_permission Optional policy deciding whether sending proceeds.
      * @param transport Transport used to deliver operations.
      */
     SyncWorker(
         Config cfg,
         std::shared_ptr<vix::sync::outbox::Outbox> outbox,
-        std::shared_ptr<vix::net::NetworkProbe> probe,
+        std::function<bool(std::int64_t)> send_permission,
         std::shared_ptr<ISyncTransport> transport);
 
     /**
@@ -161,7 +160,7 @@ namespace vix::sync::engine
     /**
      * @brief Decide whether the worker should attempt sending right now.
      *
-     * Typically checks connectivity (NetworkProbe) and possibly Outbox state.
+     * Applies the configured delivery permission policy.
      *
      * @param now_ms Current monotonic time in milliseconds.
      * @return true if sending should proceed, false otherwise.
@@ -191,9 +190,9 @@ namespace vix::sync::engine
     std::shared_ptr<vix::sync::outbox::Outbox> outbox_;
 
     /**
-     * @brief Network probe used to detect connectivity.
+     * @brief Optional policy deciding whether sending proceeds at a given time.
      */
-    std::shared_ptr<vix::net::NetworkProbe> probe_;
+    std::function<bool(std::int64_t)> send_permission_;
 
     /**
      * @brief Transport used to send operations.

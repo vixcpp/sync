@@ -19,19 +19,18 @@ namespace vix::sync::engine
   SyncWorker::SyncWorker(
       Config cfg,
       std::shared_ptr<vix::sync::outbox::Outbox> outbox,
-      std::shared_ptr<vix::net::NetworkProbe> probe,
+      std::function<bool(std::int64_t)> send_permission,
       std::shared_ptr<ISyncTransport> transport)
       : cfg_(cfg),
         outbox_(std::move(outbox)),
-        probe_(std::move(probe)),
+        send_permission_(std::move(send_permission)),
         transport_(std::move(transport))
   {
   }
 
   bool SyncWorker::should_send_(std::int64_t now_ms)
   {
-    const bool online = probe_ ? probe_->refresh(now_ms) : true;
-    return online;
+    return send_permission_ ? send_permission_(now_ms) : true;
   }
 
   std::size_t SyncWorker::process_ready_(std::int64_t now_ms)

@@ -17,7 +17,6 @@
 #include <iostream>
 #include <memory>
 
-#include <vix/net/NetworkProbe.hpp>
 #include <vix/sync/outbox/Outbox.hpp>
 #include <vix/sync/outbox/FileOutboxStore.hpp>
 #include <vix/sync/engine/SyncEngine.hpp>
@@ -58,13 +57,7 @@ int main()
       },
       store);
 
-  // 2) Probe: always online
-  auto probe = std::make_shared<vix::net::NetworkProbe>(
-      vix::net::NetworkProbe::Config{},
-      []
-      { return true; });
-
-  // 3) Transport: success
+  // 2) Transport: success
   auto transport = std::make_shared<FakeHttpTransport>();
   transport->setDefault({.ok = true});
 
@@ -75,8 +68,9 @@ int main()
   ecfg.idle_sleep_ms = 0;
   ecfg.offline_sleep_ms = 0;
   ecfg.inflight_timeout_ms = 50; // 50ms for test
+  ecfg.send_permission = [] { return true; };
 
-  SyncEngine engine(ecfg, outbox, probe, transport);
+  SyncEngine engine(ecfg, outbox, transport);
 
   // 5) Enqueue op
   Operation op;

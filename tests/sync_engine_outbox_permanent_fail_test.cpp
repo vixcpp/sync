@@ -17,7 +17,6 @@
 #include <iostream>
 #include <memory>
 
-#include <vix/net/NetworkProbe.hpp>
 #include <vix/sync/outbox/Outbox.hpp>
 #include <vix/sync/outbox/FileOutboxStore.hpp>
 #include <vix/sync/engine/SyncEngine.hpp>
@@ -58,13 +57,7 @@ int main()
       },
       store);
 
-  // 2) Network probe: always online
-  auto probe = std::make_shared<vix::net::NetworkProbe>(
-      vix::net::NetworkProbe::Config{},
-      []
-      { return true; });
-
-  // 3) Fake transport: permanent failure on this target
+  // 2) Fake transport: permanent failure on this target
   auto transport = std::make_shared<FakeHttpTransport>();
   transport->setRuleForTarget(
       "/api/messages",
@@ -79,8 +72,9 @@ int main()
   ecfg.batch_limit = 10;
   ecfg.idle_sleep_ms = 0;
   ecfg.offline_sleep_ms = 0;
+  ecfg.send_permission = [] { return true; };
 
-  SyncEngine engine(ecfg, outbox, probe, transport);
+  SyncEngine engine(ecfg, outbox, transport);
 
   // 5) Enqueue operation
   Operation op;

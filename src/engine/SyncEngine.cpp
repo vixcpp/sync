@@ -14,9 +14,54 @@
 #include <vix/sync/engine/SyncEngine.hpp>
 
 #include <chrono>
+#include <functional>
+#include <memory>
+#include <utility>
 
 namespace vix::sync::engine
 {
+
+  namespace
+  {
+    class SendGate
+    {
+    public:
+      SendGate(
+          std::function<bool()> permission,
+          std::int64_t minimum_interval_ms)
+          : permission_(std::move(permission)),
+            minimum_interval_ms_(minimum_interval_ms >= 0
+                                     ? minimum_interval_ms
+                                     : 1000)
+      {
+      }
+
+      [[nodiscard]] bool allows_send(std::int64_t now_ms)
+      {
+        if (!permission_)
+        {
+          return true;
+        }
+
+        if (!initialized_ || now_ms - last_evaluation_ms_ < 0 ||
+            now_ms - last_evaluation_ms_ >= minimum_interval_ms_)
+        {
+          last_allowed_ = permission_();
+          last_evaluation_ms_ = now_ms;
+          initialized_ = true;
+        }
+
+        return last_allowed_;
+      }
+
+    private:
+      std::function<bool()> permission_;
+      std::int64_t minimum_interval_ms_{1000};
+      bool last_allowed_{true};
+      std::int64_t last_evaluation_ms_{0};
+      bool initialized_{false};
+    };
+  } // namespace
 
   static std::int64_t now_ms()
   {
@@ -27,13 +72,19 @@ namespace vix::sync::engine
   SyncEngine::SyncEngine(
       Config cfg,
       std::shared_ptr<vix::sync::outbox::Outbox> outbox,
-      std::shared_ptr<vix::net::NetworkProbe> probe,
       std::shared_ptr<ISyncTransport> transport)
-      : cfg_(cfg),
+      : cfg_(std::move(cfg)),
         outbox_(std::move(outbox)),
-        probe_(std::move(probe)),
         transport_(std::move(transport))
   {
+    auto send_gate = std::make_shared<SendGate>(
+        cfg_.send_permission,
+        cfg_.send_permission_min_interval_ms);
+    send_permission_ = [send_gate](std::int64_t now_ms)
+    {
+      return send_gate->allows_send(now_ms);
+    };
+
     workers_.reserve(cfg_.worker_count);
     for (std::size_t i = 0; i < cfg_.worker_count; ++i)
     {
@@ -43,7 +94,11 @@ namespace vix::sync::engine
       wc.offline_sleep_ms = cfg_.offline_sleep_ms;
       wc.inflight_timeout_ms = cfg_.inflight_timeout_ms;
 
-      workers_.push_back(std::make_unique<SyncWorker>(wc, outbox_, probe_, transport_));
+      workers_.push_back(std::make_unique<SyncWorker>(
+          wc,
+          outbox_,
+          send_permission_,
+          transport_));
     }
   }
 
